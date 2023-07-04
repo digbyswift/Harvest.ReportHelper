@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net7.0</TargetFramework>
+    <ApplicationIcon>harvest_logo.ico</ApplicationIcon>
+    <AssemblyName>hrc</AssemblyName>
+    <LangVersion>default</LangVersion>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="EPPlus" Version="5.8.7" />
+  </ItemGroup>
+
+</Project>
