@@ -13,7 +13,7 @@ namespace Harvest.ReportHelper;
 
 public class Runner
 {
-    private string? _currentFilePath;
+    private FileInfo? _currentFileInfo;
 
     public Runner()
     {
@@ -35,90 +35,112 @@ public class Runner
         
     public async Task<bool> TryGetFileNameAsync()
     {
+        if (_currentFileInfo != null)
+        {
+            await Console.Out.WriteLineAsync("Use current file? [Y]/n");
+            if ((Console.ReadLine()?.ToUpper() ?? "Y") != "N")
+            {
+                return true;
+            }
+        }
+        
         await Console.Out.WriteAsync("Enter source file name: ");
         var fileReference = Console.ReadLine();
 
         if (String.IsNullOrWhiteSpace(fileReference))
             return false;
         
-        _currentFilePath = fileReference;
+        FileInfo? file;
+        
+        if (fileReference.Contains(@":\"))
+        {
+            file = new FileInfo(fileReference.Trim('"'));
+        }
+        else
+        {
+            var shortenedPath = Path.Combine("%USERPROFILE%\\Downloads", fileReference);
+            file = new FileInfo(Environment.ExpandEnvironmentVariables(shortenedPath));
+        }
+
+        if (!file.Exists)
+        {
+            await Console.Out.WriteLineAsync("File doesn't exist");
+            return false;
+        }
+
+        _currentFileInfo = file;
         return true;
     }
 
     public async Task RunCheckAsync()
     {
-        if (_currentFilePath == null)
-            return;
-        
-        var shortenedPath = Path.Combine("%USERPROFILE%\\Downloads", _currentFilePath);
-        var filePath = Environment.ExpandEnvironmentVariables(shortenedPath);
-        var file = new FileInfo(filePath);
-
-        var codeRefRegex = new Regex(@"^(?<prefix>[A-Z]{2})[A-Z]{1,}-");
-        var hoursRegex = new Regex(@"^\d+(\.(25|5|75))?$");
-        var rowsWithIssues = new Collection<int>();
-        
-        using (var package = new ExcelPackage(file))
+        try
         {
-            var sheet = package.Workbook.Worksheets[0];
-
-            const int projectCodeColumn = 4;
-            const int notesColumn = 6;
-            const int hoursColumn = 7;
-
-            for (var row = 2; row < sheet.Rows.EndRow; row++)
+            var codeRefRegex = new Regex(@"^(?<prefix>[A-Z]{2})[A-Z]{1,}-");
+            var hoursRegex = new Regex(@"^\d+(\.(25|5|75))?$");
+            var rowsWithIssues = new Collection<int>();
+            
+            using (var package = new ExcelPackage(_currentFileInfo))
             {
-                var projectCodeValue = sheet.Cells[row, projectCodeColumn].Value?.ToString();
-                if (projectCodeValue == null)
-                    break;
-                
-                var notesValue = sheet.Cells[row, notesColumn].Value?.ToString();
-                if (!String.IsNullOrWhiteSpace(notesValue) && codeRefRegex.IsMatch(notesValue))
+                var sheet = package.Workbook.Worksheets[0];
+
+                const int projectCodeColumn = 4;
+                const int notesColumn = 6;
+                const int hoursColumn = 7;
+
+                for (var row = 2; row < sheet.Rows.EndRow; row++)
                 {
-                    var notesCodePrefix = codeRefRegex.Match(notesValue).Groups["prefix"].Value;
-                    if (!projectCodeValue.StartsWith(notesCodePrefix))
+                    var projectCodeValue = sheet.Cells[row, projectCodeColumn].Value?.ToString();
+                    if (projectCodeValue == null)
+                        break;
+                    
+                    var notesValue = sheet.Cells[row, notesColumn].Value?.ToString();
+                    if (!String.IsNullOrWhiteSpace(notesValue) && codeRefRegex.IsMatch(notesValue))
+                    {
+                        var notesCodePrefix = codeRefRegex.Match(notesValue).Groups["prefix"].Value;
+                        if (!projectCodeValue.StartsWith(notesCodePrefix))
+                        {
+                            rowsWithIssues.Add(row);
+                            sheet.Row(row).Style.Font.Bold = true;
+                            sheet.Cells[row, notesColumn].Style.Font.Color.SetColor(Color.Crimson);
+                            sheet.Cells[row, notesColumn].Style.Fill.PatternType = ExcelFillStyle.Solid;
+                            sheet.Cells[row, notesColumn].Style.Fill.BackgroundColor.SetColor(Color.MistyRose);
+                        }
+                    }
+
+                    var hoursValue = sheet.Cells[row, hoursColumn].Value?.ToString();
+                    if (!String.IsNullOrWhiteSpace(hoursValue) && !hoursRegex.IsMatch(hoursValue))
                     {
                         rowsWithIssues.Add(row);
                         sheet.Row(row).Style.Font.Bold = true;
-                        sheet.Cells[row, notesColumn].Style.Font.Color.SetColor(Color.Crimson);
-                        sheet.Cells[row, notesColumn].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                        sheet.Cells[row, notesColumn].Style.Fill.BackgroundColor.SetColor(Color.MistyRose);
+                        sheet.Cells[row, hoursColumn].Style.Font.Color.SetColor(Color.Crimson);
+                        sheet.Cells[row, hoursColumn].Style.Fill.PatternType = ExcelFillStyle.Solid;
+                        sheet.Cells[row, hoursColumn].Style.Fill.BackgroundColor.SetColor(Color.MistyRose);
                     }
                 }
 
-                var hoursValue = sheet.Cells[row, hoursColumn].Value?.ToString();
-                if (!String.IsNullOrWhiteSpace(hoursValue) && !hoursRegex.IsMatch(hoursValue))
+                if (rowsWithIssues.Any())
                 {
-                    rowsWithIssues.Add(row);
-                    sheet.Row(row).Style.Font.Bold = true;
-                    sheet.Cells[row, hoursColumn].Style.Font.Color.SetColor(Color.Crimson);
-                    sheet.Cells[row, hoursColumn].Style.Fill.PatternType = ExcelFillStyle.Solid;
-                    sheet.Cells[row, hoursColumn].Style.Fill.BackgroundColor.SetColor(Color.MistyRose);
+                    sheet.Column(notesColumn).Width = 70;
+
+                    await package.SaveAsync();
+                    await Console.Out.WriteLineAsync($"Checked with {rowsWithIssues.Count} issues");
+                }
+                else
+                {
+                    await Console.Out.WriteLineAsync($"Checked with no issues");
                 }
             }
-
-            if (rowsWithIssues.Any())
-            {
-                sheet.Column(notesColumn).Width = 70;
-
-                await package.SaveAsync();
-                await Console.Out.WriteLineAsync($"Checked with {rowsWithIssues.Count} issues");
-            }
-            else
-            {
-                await Console.Out.WriteLineAsync($"Checked with no issues");
-            }
+        }
+        catch (Exception ex)
+        {
+            await Console.Out.WriteLineAsync(ex.Message);
+            Console.ReadLine();
         }
     }
 
     public async Task RunCleanAsync(bool deleteClientColumn = true, bool allowPrefix = true)
     {
-        if (_currentFilePath == null)
-            return;
-        
-        var shortenedPath = Path.Combine("%USERPROFILE%\\Downloads", _currentFilePath);
-        var filePath = Environment.ExpandEnvironmentVariables(shortenedPath);
-
         string? prefix = null;
         if (allowPrefix)
         {
@@ -126,9 +148,7 @@ public class Runner
             prefix = Console.ReadLine();
         }
         
-        var file = new FileInfo(filePath);
-        
-        using (var package = new ExcelPackage(file))
+        using (var package = new ExcelPackage(_currentFileInfo))
         {
             var sheet = package.Workbook.Worksheets[0];
             if (sheet.Cells[1, 7].Value?.ToString() != "Hours")
@@ -182,30 +202,24 @@ public class Runner
 
             if (!String.IsNullOrWhiteSpace(prefix))
             {
-                _currentFilePath = filePath.Replace("harvest_", $"{prefix.Trim()}_");
+                var fileName = _currentFileInfo?.Name.Replace("harvest_", $"{prefix.Trim()}_");
                 
-                await package.SaveAsAsync(_currentFilePath);
-                await Console.Out.WriteLineAsync($"Cleaned and output to {_currentFilePath}");
+                await package.SaveAsAsync(fileName);
+                await Console.Out.WriteLineAsync($"Cleaned and output to {fileName}");
             }
             else
             {
-                await package.SaveAsAsync(filePath);
-                await Console.Out.WriteLineAsync($"Cleaned {filePath}");
+                await package.SaveAsAsync(_currentFileInfo);
+                await Console.Out.WriteLineAsync($"Cleaned {_currentFileInfo}");
             }
         }
     }
 
     public async Task RunSplitAsync()
     {
-        if (_currentFilePath == null)
-            return;
-        
-        var shortenedPath = Path.Combine("%USERPROFILE%\\Downloads", _currentFilePath);
-        var filePath = Environment.ExpandEnvironmentVariables(shortenedPath);
-        var file = new FileInfo(filePath);
         var clientNames = new List<string>();
         
-        using (var package = new ExcelPackage(file))
+        using (var package = new ExcelPackage(_currentFileInfo))
         {
             var sheet = package.Workbook.Worksheets[0];
             
@@ -230,14 +244,10 @@ public class Runner
 
     private async Task SplitForClientAsync(string clientName)
     {
-        if (_currentFilePath == null)
+        if (_currentFileInfo == null)
             return;
         
-        var shortenedPath = Path.Combine("%USERPROFILE%\\Downloads", _currentFilePath);
-        var filePath = Environment.ExpandEnvironmentVariables(shortenedPath);
-        var file = new FileInfo(filePath);
-
-        using (var package = new ExcelPackage(file))
+        using (var package = new ExcelPackage(_currentFileInfo))
         {
             var sheet = package.Workbook.Worksheets[0];
             var rowsToDelete = new List<int>();
@@ -262,7 +272,7 @@ public class Runner
                 sheet.DeleteRow(row);   
             }
 
-            var splitFilePath = filePath.Replace("harvest_", $"{clientName.ToLower().Trim()}_");
+            var splitFilePath = _currentFileInfo.Name.Replace("harvest_", $"{clientName.ToLower().Trim().Replace(" ", "_")}_");
             
             await package.SaveAsAsync(splitFilePath);
             await Console.Out.WriteLineAsync($"Split and output to {splitFilePath}");

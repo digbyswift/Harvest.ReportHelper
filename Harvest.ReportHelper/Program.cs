@@ -15,7 +15,6 @@ namespace Harvest.ReportHelper
                 var runner = new Runner();
                 
                 await Console.Out.WriteLineAsync("Using downloads folder: %USERPROFILE%\\Downloads");
-                var canContinue = false;
 
                 do
                 {
@@ -44,10 +43,7 @@ namespace Harvest.ReportHelper
 
                     await Console.Out.WriteAsync("Continue? [Y/n]: ");
                     
-                    var continueValue = Console.ReadLine();
-                    canContinue = String.IsNullOrWhiteSpace(continueValue) || (continueValue.ToUpper() ?? "Y") == "Y";
-                    
-                } while (canContinue);
+                } while ((Console.ReadLine()?.ToUpper() ?? "Y") != "N");
 
             }
             catch (Exception ex)
