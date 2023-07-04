@@ -18,7 +18,7 @@ namespace Harvest.ReportHelper
 
                 do
                 {
-                    var option = await runner.GetOptionAsync();
+                    var option = await Runner.GetOptionAsync();
                     if (option > 0)
                     {
                         if (!await runner.TryGetFileNameAsync())

@@ -11,8 +11,14 @@ using OfficeOpenXml.Style;
 
 namespace Harvest.ReportHelper;
 
-public class Runner
+public partial class Runner
 {
+    [GeneratedRegex("^(?<prefix>[A-Z]{2})[A-Z]{1,}-")]
+    private static partial Regex CodeRefRegex();
+
+    [GeneratedRegex("^\\d+(\\.(25|5|75))?$")]
+    private static partial Regex HoursRegex();
+
     private FileInfo? _currentFileInfo;
 
     public Runner()
@@ -20,11 +26,11 @@ public class Runner
         ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
     }
     
-    public async Task<int> GetOptionAsync()
+    public static async Task<int> GetOptionAsync()
     {
         await Console.Out.WriteLineAsync("");
         await Console.Out.WriteLineAsync("Choose: ");
-        await Console.Out.WriteLineAsync("1) Check for issues (Default)");
+        await Console.Out.WriteLineAsync("1) Check for issues");
         await Console.Out.WriteLineAsync("2) Clean");
         await Console.Out.WriteLineAsync("3) Clean & split");
         
@@ -76,8 +82,9 @@ public class Runner
     {
         try
         {
-            var codeRefRegex = new Regex(@"^(?<prefix>[A-Z]{2})[A-Z]{1,}-");
-            var hoursRegex = new Regex(@"^\d+(\.(25|5|75))?$");
+            var codeRefRegex = CodeRefRegex();
+            var hoursRegex = HoursRegex();
+            
             var rowsWithIssues = new Collection<int>();
             
             using (var package = new ExcelPackage(_currentFileInfo))
